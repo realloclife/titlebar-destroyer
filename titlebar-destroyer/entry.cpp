@@ -1,44 +1,44 @@
-#include <iostream>
-#include <system_error>
-#include <thread>
-#include <Windows.h>
+#include <windows.h>
+#include <UIAutomation.h>
 
-auto remove_titlebar(HWND handle, LPARAM) noexcept -> BOOL CALLBACK {
-	auto style = GetWindowLong(handle, GWL_STYLE);
-	style &= ~WS_CAPTION;
-	SetWindowLong(handle, GWL_STYLE, style);
-	auto window = RECT{};
-	GetWindowRect(handle, &window);
-	SetWindowPos(handle, nullptr,
-		window.left, window.top,
-		window.right - window.left,
-		window.bottom - window.top,
-		SWP_FRAMECHANGED);
+#pragma comment(lib, "UIAutomationCore.lib")
+
+auto win_event_proc(HWINEVENTHOOK, DWORD, HWND window, LONG object_id, LONG child_id, DWORD, DWORD) -> void CALLBACK {
+	if (object_id == OBJID_WINDOW && child_id == CHILDID_SELF) {
+		IUIAutomationElement* pElement{};
+		IUIAutomation* pAutomation{};
+		if (FAILED(CoCreateInstance(CLSID_CUIAutomation, NULL, CLSCTX_INPROC_SERVER, IID_IUIAutomation, reinterpret_cast<void**>(&pAutomation)))) {
+			return;
+		}
+		pAutomation->ElementFromHandle(window, &pElement);
+		SetWindowLong(window, GWL_STYLE, GetWindowLong(window, GWL_STYLE) & ~WS_CAPTION);
+		RedrawWindow(window, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
+		if (!pElement) {
+			return;
+		}
+		pElement->Release();
+		pAutomation->Release();
+	}
+}
+
+auto enum_windows_proc(HWND window, LPARAM) -> BOOL CALLBACK {
+	SetWindowLong(window, GWL_STYLE, GetWindowLong(window, GWL_STYLE) & ~WS_CAPTION);
+		RedrawWindow(window, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
 	return TRUE;
 }
 
-auto new_window_hook(HWINEVENTHOOK, DWORD event, HWND, LONG, LONG, DWORD, DWORD) noexcept -> void CALLBACK {
-	if (event == EVENT_OBJECT_CREATE) {
-		EnumWindows(remove_titlebar, 0); // currently unoptimized, there's better ways to do this
-	}
-}
-
-auto main() -> int {
-	ShowWindow(GetConsoleWindow(), SW_HIDE);
-	EnumWindows(remove_titlebar, 0);
-	auto event_hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_CREATE, nullptr, new_window_hook, 0, 0, WINEVENT_OUTOFCONTEXT);
-	if (!event_hook) {
-		auto error_id = GetLastError();
-		ShowWindow(GetConsoleWindow(), SW_SHOW);
-		std::cerr << "Couldn't set up event hook\n";
-		std::cerr << "GetLastError: " << std::system_category().message(error_id) << '\n';
-		std::this_thread::sleep_for(std::chrono::milliseconds{ 3000 });
+auto WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) -> int WINAPI {
+	if (FAILED(CoInitialize(nullptr))) {
 		return EXIT_FAILURE;
 	}
-	auto message = MSG{};
-	while (GetMessage(&message, nullptr, 0, 0)) {
-		TranslateMessage(&message);
-		DispatchMessage(&message);
+	auto hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_CREATE, nullptr, win_event_proc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+	EnumWindows(enum_windows_proc, 0);
+	auto msg = MSG{};
+	while (GetMessage(&msg, nullptr, 0, 0)) {
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
 	}
+	UnhookWinEvent(hook);
+	CoUninitialize();
 	return EXIT_SUCCESS;
 }
