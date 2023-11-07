@@ -1,4 +1,4 @@
-#include <windows.h>
+#include <Windows.h>
 #include <UIAutomation.h>
 
 #pragma comment(lib, "UIAutomationCore.lib")
@@ -23,7 +23,7 @@ auto win_event_proc(HWINEVENTHOOK, DWORD, HWND window, LONG object_id, LONG chil
 
 auto enum_windows_proc(HWND window, LPARAM) -> BOOL CALLBACK {
 	SetWindowLong(window, GWL_STYLE, GetWindowLong(window, GWL_STYLE) & ~WS_CAPTION);
-		RedrawWindow(window, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
+	RedrawWindow(window, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
 	return TRUE;
 }
 
